@@ -22,21 +22,33 @@ app.use(express.json());
 // GH_REPO="owner/repo" contoh: "sigitars9-hue/api-gv-comics-data"
 // GH_BRANCH="main" (opsional)
 // GITHUB_TOKEN (opsional, untuk rate limit lega)
-const GH_REPO   = process.env.GH_REPO;
+// ── ENV ──
+const GH_REPO   = process.env.GH_REPO;     // contoh: "sigitars9-hue/Repo-A"
 const GH_BRANCH = process.env.GH_BRANCH || 'main';
 const GH_TOKEN  = process.env.GITHUB_TOKEN || '';
-const RAW_URL   = GH_REPO
+
+const RAW_URL = GH_REPO
   ? `https://raw.githubusercontent.com/${GH_REPO}/${GH_BRANCH}/data.json`
   : null;
 
-// fallback lokal (dev only)
 const DATA_PATH = path.join(process.cwd(), 'data.json');
 
-// cache ringan di memori (per instance)
+// cache memori
 let __cache = { etag: null, data: null, ts: 0 };
 
+async function fetchWithTimeout(url, options = {}, ms = 5000) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), ms);
+  try {
+    const resp = await fetch(url, { ...options, signal: controller.signal });
+    return resp;
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 async function load() {
-  // jika belum set GH_REPO → baca lokal (untuk dev)
+  // dev fallback bila GH_REPO kosong
   if (!RAW_URL) {
     const raw = fs.readFileSync(DATA_PATH, 'utf-8');
     return JSON.parse(raw);
@@ -46,23 +58,49 @@ async function load() {
   const now = Date.now();
   if (__cache.data && now - __cache.ts < 10_000) return __cache.data;
 
-  const headers = {};
-  if (GH_TOKEN) headers['Authorization'] = `token ${GH_TOKEN}`;
-  if (__cache.etag) headers['If-None-Match'] = __cache.etag;
+  // 1) Coba RAW githubusercontent (cepat untuk repo public)
+  try {
+    const headers = {};
+    if (__cache.etag) headers['If-None-Match'] = __cache.etag;
 
-  const resp = await fetch(RAW_URL, { headers });
-
-  if (resp.status === 304 && __cache.data) {
-    __cache.ts = now;
-    return __cache.data;
+    const r = await fetchWithTimeout(RAW_URL, { headers }, 5000);
+    if (r && r.status === 304 && __cache.data) {
+      __cache.ts = now;
+      return __cache.data;
+    }
+    if (r && r.ok) {
+      const text = await r.text();
+      const json = JSON.parse(text);
+      __cache = { etag: r.headers.get('etag'), data: json, ts: now };
+      return json;
+    }
+  } catch (_) {
+    // lanjut ke fallback
   }
 
-  if (!resp.ok) {
-    // fallback ke cache lama atau file lokal
-    if (__cache.data) return __cache.data;
-    const raw = fs.readFileSync(DATA_PATH, 'utf-8');
-    return JSON.parse(raw);
+  // 2) Fallback: GitHub Contents API (mendukung Authorization)
+  try {
+    const apiURL = `https://api.github.com/repos/${GH_REPO}/contents/data.json?ref=${GH_BRANCH}`;
+    const headers = { 'Accept': 'application/vnd.github+json' };
+    if (GH_TOKEN) headers['Authorization'] = `token ${GH_TOKEN}`;
+
+    const r = await fetchWithTimeout(apiURL, { headers }, 6000);
+    if (r && r.ok) {
+      const j = await r.json();
+      const text = Buffer.from(j.content, 'base64').toString('utf8');
+      const json = JSON.parse(text);
+      __cache = { etag: j.sha, data: json, ts: now }; // etag pakai sha
+      return json;
+    }
+  } catch (_) {
+    // lanjut ke fallback terakhir
   }
+
+  // 3) Fallback terakhir: cache lama / file lokal
+  if (__cache.data) return __cache.data;
+  const raw = fs.readFileSync(DATA_PATH, 'utf-8');
+  return JSON.parse(raw);
+}
 
   const text = await resp.text();
   const json = JSON.parse(text);

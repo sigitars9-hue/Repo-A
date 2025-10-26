@@ -262,4 +262,7 @@ app.get('/by-genre/:name', async (req, res) => {
 });
 
 /* ------------ Export handler untuk Vercel ------------ */
-export default app;
+// export default app;  // ← JANGAN ini
+export default function handler(req, res) {
+  return app(req, res);
+}

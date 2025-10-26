@@ -2,10 +2,6 @@
   "version": 2,
   "routes": [
     { "src": "^/api/submit$", "dest": "api/submit.js", "methods": ["POST", "OPTIONS"] },
-    { "src": "/(.*)", "dest": "/api/index.js" }
-  ],
-  "functions": {
-    "api/index.js": { "runtime": "nodejs20.x" },
-    "api/submit.js": { "runtime": "nodejs20.x" }
-  }
+    { "src": "/(.*)", "dest": "api/index.js" }
+  ]
 }

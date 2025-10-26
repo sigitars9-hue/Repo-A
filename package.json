@@ -1,17 +1,10 @@
 {
-  "name": "gv-comics-api",
-  "version": "1.0.0",
   "type": "module",
-  "private": true,
-  "description": "API untuk GV Comics - Express on Vercel",
-  "main": "api/index.js",
   "scripts": {
     "dev": "node api/index.js",
     "start": "node api/index.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2"
